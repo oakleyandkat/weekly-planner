@@ -6,8 +6,19 @@ import { sql } from "drizzle-orm";
 import * as schema from "./schema";
 
 // In dev we use PGlite (in-process Postgres stored in a single file).
-// In prod we set DATABASE_URL to a real Postgres URL — same code, same dialect.
-const url = process.env.DATABASE_URL ?? "pglite://./local.db";
+// In prod we set DATABASE_URL directly, OR Suga injects POSTGRES_USER /
+// POSTGRES_PASSWORD / POSTGRES_HOST / POSTGRES_DB as separate variables
+// (its env vars are atomic — one reference per variable, no templating —
+// so we assemble the URL here).
+function resolveUrl(): string {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const { POSTGRES_USER: u, POSTGRES_PASSWORD: p, POSTGRES_HOST: h, POSTGRES_DB: d } = process.env;
+  if (u && p && h && d) {
+    return `postgres://${encodeURIComponent(u)}:${encodeURIComponent(p)}@${h}:5432/${d}`;
+  }
+  return "pglite://./local.db";
+}
+const url = resolveUrl();
 
 // Reuse the client across hot-reloads in dev so we don't open a new DB every render.
 const globalForDb = globalThis as unknown as {
