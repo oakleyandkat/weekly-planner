@@ -41,6 +41,9 @@ yarn-error.log*
 /local.db
 /local.db-*
 
+# claude code local dev tooling
+.claude/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
