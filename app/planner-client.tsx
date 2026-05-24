@@ -52,6 +52,14 @@ const THEMES = [
   { id: "forest", name: "Forest", color: "#5a7a4a" },
   { id: "ocean", name: "Ocean", color: "#6cc8e0" },
   { id: "galaxy", name: "Galaxy", color: "#6c2dc7" },
+  { id: "kawaii", name: "Kawaii 🎀", color: "#ff66a3" },
+  { id: "goth", name: "Goth 🕶️", color: "#b30021" },
+  { id: "brat", name: "Brat 🟢", color: "#8acf00" },
+  { id: "oldmoney", name: "Old Money 🌾", color: "#355e3b" },
+  { id: "academia", name: "Dark Academia 📚", color: "#b87333" },
+  { id: "vapor", name: "Vaporwave 🌴", color: "#ff10f0" },
+  { id: "coastal", name: "Coastal 🐚", color: "#7ab3a3" },
+  { id: "whimsigoth", name: "Whimsigoth 🌙", color: "#d4a850" },
 ] as const;
 
 const THEME_KEY = "weeklyPlannerTheme_v2";

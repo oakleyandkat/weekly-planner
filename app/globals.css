@@ -837,3 +837,329 @@ html[data-theme="galaxy"] .planner-h1 {
   -webkit-text-fill-color: transparent;
 }
 html[data-theme="galaxy"] .delete-btn { background: rgba(0,0,0,0.4); color: #fff; }
+
+/* =========================================================
+   THEME 11: KAWAII 🎀
+   ========================================================= */
+html[data-theme="kawaii"] {
+  --font-display: 'Comfortaa', 'Fredoka', sans-serif;
+  --font-body: 'Comfortaa', 'Quicksand', sans-serif;
+  --bg-base: #fff0f6;
+  --bg-blob-a: #ffc4dd;
+  --bg-blob-b: #d8c4ff;
+  --ink: #5a3a55;
+  --ink-soft: #a888a0;
+  --accent: #ff66a3;
+  --accent-soft: #ffd4e8;
+  --accent-ink: #c43680;
+  --card-bg: #ffffff;
+  --card-radius: 28px;
+  --card-shadow: 0 8px 24px rgba(255, 102, 163, 0.18);
+  --card-border: 2px solid #ffe0ee;
+  --divider: 2px dotted #ffd4e8;
+  --today-bg: linear-gradient(160deg, #fff 0%, #fff0f6 100%);
+  --today-ring: 0 0 0 3px var(--accent-soft), 0 8px 24px rgba(255, 102, 163, 0.2);
+  --pill-radius: 22px;
+  --pill-1-bg: #ffd4e8; --pill-1-ink: #c43680;
+  --pill-2-bg: #d4e8ff; --pill-2-ink: #3a6dc7;
+  --pill-3-bg: #d4ffd4; --pill-3-ink: #2e8c63;
+  --pill-4-bg: #fff5d4; --pill-4-ink: #b88318;
+  --pill-5-bg: #e8d4ff; --pill-5-ink: #7a4fc7;
+  --pill-6-bg: #ffe0d4; --pill-6-ink: #c66a2d;
+  --pill-7-bg: #d4f0ff; --pill-7-ink: #2885b3;
+  --add-bg: #fff5fa;
+  --add-ink: #c489a8;
+  --add-radius: 18px;
+  --empty-ink: #e0b8cc;
+  --empty-msg: "no plans (´｡• ᵕ •｡`) ♡";
+}
+html[data-theme="kawaii"] .planner-h1 { font-weight: 700; }
+html[data-theme="kawaii"] .day-name::before { content: "♡ "; color: var(--accent); }
+
+/* =========================================================
+   THEME 12: GOTH 🕶️
+   ========================================================= */
+html[data-theme="goth"] {
+  --font-display: 'Cormorant Garamond', serif;
+  --font-body: 'Cormorant Garamond', serif;
+  --bg-base: #0a0a0a;
+  --bg-blob-a: #5a0010;
+  --bg-blob-b: #1a1a1a;
+  --ink: #e8e0d8;
+  --ink-soft: #8a7a7a;
+  --accent: #b30021;
+  --accent-soft: #2a0008;
+  --accent-ink: #e84458;
+  --card-bg: #141010;
+  --card-radius: 4px;
+  --card-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  --card-border: 1px solid rgba(179, 0, 33, 0.25);
+  --divider: 1px solid rgba(179, 0, 33, 0.3);
+  --today-bg: linear-gradient(160deg, #141010 0%, #2a0008 100%);
+  --today-ring: 0 0 0 2px var(--accent), 0 0 30px rgba(179, 0, 33, 0.5);
+  --pill-radius: 4px;
+  --pill-1-bg: #2a0008; --pill-1-ink: #e84458;
+  --pill-2-bg: #1a0a1a; --pill-2-ink: #c4a8d4;
+  --pill-3-bg: #0a1a1a; --pill-3-ink: #88c4c4;
+  --pill-4-bg: #1a1208; --pill-4-ink: #d4b888;
+  --pill-5-bg: #1a0820; --pill-5-ink: #b888d4;
+  --pill-6-bg: #200810; --pill-6-ink: #d48888;
+  --pill-7-bg: #181818; --pill-7-ink: #b8b8b8;
+  --add-bg: rgba(179, 0, 33, 0.08);
+  --add-ink: #8a7a7a;
+  --add-radius: 4px;
+  --empty-ink: #4a3a3a;
+  --empty-msg: "✟ the void ✟";
+}
+html[data-theme="goth"] .planner-h1 { font-style: italic; font-weight: 600; letter-spacing: 0.02em; }
+html[data-theme="goth"] .delete-btn { background: rgba(0,0,0,0.6); color: #e84458; }
+
+/* =========================================================
+   THEME 13: BRAT 🟢
+   ========================================================= */
+html[data-theme="brat"] {
+  --font-display: 'Inter', 'Arial', sans-serif;
+  --font-body: 'Inter', 'Arial', sans-serif;
+  --bg-base: #8acf00;
+  --bg-blob-a: transparent;
+  --bg-blob-b: transparent;
+  --ink: #000000;
+  --ink-soft: #2a3a00;
+  --accent: #000000;
+  --accent-soft: #6ba500;
+  --accent-ink: #000000;
+  --card-bg: #8acf00;
+  --card-radius: 0px;
+  --card-shadow: none;
+  --card-border: 1px solid #000;
+  --divider: 1px solid #000;
+  --today-bg: #000;
+  --today-ring: 0 0 0 2px #000;
+  --pill-radius: 0px;
+  --pill-1-bg: #000; --pill-1-ink: #8acf00;
+  --pill-2-bg: #000; --pill-2-ink: #8acf00;
+  --pill-3-bg: #000; --pill-3-ink: #8acf00;
+  --pill-4-bg: #000; --pill-4-ink: #8acf00;
+  --pill-5-bg: #000; --pill-5-ink: #8acf00;
+  --pill-6-bg: #000; --pill-6-ink: #8acf00;
+  --pill-7-bg: #000; --pill-7-ink: #8acf00;
+  --add-bg: transparent;
+  --add-ink: #000;
+  --add-radius: 0px;
+  --empty-ink: #2a3a00;
+  --empty-msg: "365";
+}
+html[data-theme="brat"] body { text-transform: lowercase; }
+html[data-theme="brat"] .planner-h1 { font-weight: 900; letter-spacing: -0.04em; filter: blur(0.6px); }
+html[data-theme="brat"] .day-column.today { color: #8acf00; }
+html[data-theme="brat"] .day-column.today .day-name,
+html[data-theme="brat"] .day-column.today .day-date { color: #8acf00; }
+html[data-theme="brat"] .add-btn { border: 1px solid #000; }
+
+/* =========================================================
+   THEME 14: OLD MONEY 🌾
+   ========================================================= */
+html[data-theme="oldmoney"] {
+  --font-display: 'Cormorant Garamond', serif;
+  --font-body: 'Lora', serif;
+  --bg-base: #f5ecd9;
+  --bg-blob-a: #d8c89a;
+  --bg-blob-b: #c8d4b8;
+  --ink: #1c2a4a;
+  --ink-soft: #6a7a8a;
+  --accent: #355e3b;
+  --accent-soft: #d8e0c8;
+  --accent-ink: #1c3a20;
+  --card-bg: #faf3e0;
+  --card-radius: 6px;
+  --card-shadow: 0 4px 14px rgba(28, 42, 74, 0.12);
+  --card-border: 1px solid #d8c89a;
+  --divider: 1px solid rgba(28, 42, 74, 0.15);
+  --today-bg: #fff8e8;
+  --today-ring: 0 0 0 2px #355e3b, 0 4px 14px rgba(28, 42, 74, 0.15);
+  --pill-radius: 4px;
+  --pill-1-bg: #d8e0c8; --pill-1-ink: #1c3a20;
+  --pill-2-bg: #d4d8e8; --pill-2-ink: #1c2a4a;
+  --pill-3-bg: #ebe0c4; --pill-3-ink: #6a4a18;
+  --pill-4-bg: #d8c4c4; --pill-4-ink: #5a2030;
+  --pill-5-bg: #e0d8b8; --pill-5-ink: #5a4a20;
+  --pill-6-bg: #c8d4c4; --pill-6-ink: #2a4530;
+  --pill-7-bg: #e8dcc0; --pill-7-ink: #6a5a20;
+  --add-bg: rgba(28, 42, 74, 0.05);
+  --add-ink: #6a7a8a;
+  --add-radius: 4px;
+  --empty-ink: #b8b09a;
+  --empty-msg: "— at leisure —";
+}
+html[data-theme="oldmoney"] .planner-h1 { font-style: italic; font-weight: 500; letter-spacing: 0.01em; }
+html[data-theme="oldmoney"] .day-name { font-variant: small-caps; letter-spacing: 0.08em; }
+
+/* =========================================================
+   THEME 15: DARK ACADEMIA 📚
+   ========================================================= */
+html[data-theme="academia"] {
+  --font-display: 'Cormorant Garamond', serif;
+  --font-body: 'Crimson Pro', 'Lora', serif;
+  --bg-base: #2a1f15;
+  --bg-blob-a: #5a3a20;
+  --bg-blob-b: #3a2818;
+  --ink: #ebe0c8;
+  --ink-soft: #a89580;
+  --accent: #b87333;
+  --accent-soft: #4a2818;
+  --accent-ink: #e8a868;
+  --card-bg: #3a2818;
+  --card-radius: 6px;
+  --card-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  --card-border: 1px solid rgba(184, 115, 51, 0.25);
+  --divider: 1px solid rgba(184, 115, 51, 0.25);
+  --today-bg: linear-gradient(160deg, #3a2818 0%, #4a3018 100%);
+  --today-ring: 0 0 0 2px #b87333, 0 8px 24px rgba(0,0,0,0.4);
+  --pill-radius: 6px;
+  --pill-1-bg: #4a2018; --pill-1-ink: #e8a880;
+  --pill-2-bg: #2a3818; --pill-2-ink: #c8d488;
+  --pill-3-bg: #482818; --pill-3-ink: #d4a868;
+  --pill-4-bg: #38201a; --pill-4-ink: #e88888;
+  --pill-5-bg: #1a2a38; --pill-5-ink: #88b8d4;
+  --pill-6-bg: #382818; --pill-6-ink: #d4c088;
+  --pill-7-bg: #2a1a28; --pill-7-ink: #c4a8c4;
+  --add-bg: rgba(184, 115, 51, 0.1);
+  --add-ink: #a89580;
+  --add-radius: 6px;
+  --empty-ink: #6a5a48;
+  --empty-msg: "* * *";
+}
+html[data-theme="academia"] .planner-h1 { font-style: italic; font-weight: 500; }
+html[data-theme="academia"] .day-name { font-variant: small-caps; letter-spacing: 0.06em; }
+html[data-theme="academia"] .delete-btn { background: rgba(0,0,0,0.4); color: #e8a868; }
+
+/* =========================================================
+   THEME 16: VAPORWAVE 🌴
+   ========================================================= */
+html[data-theme="vapor"] {
+  --font-display: 'VT323', 'Space Grotesk', monospace;
+  --font-body: 'Space Grotesk', sans-serif;
+  --bg-base: linear-gradient(180deg, #ff71ce 0%, #b967ff 50%, #01cdfe 100%);
+  --bg-blob-a: #ff71ce;
+  --bg-blob-b: #05ffa1;
+  --ink: #1a0840;
+  --ink-soft: #6a4a8a;
+  --accent: #ff10f0;
+  --accent-soft: #ffc0f4;
+  --accent-ink: #80008a;
+  --card-bg: rgba(255, 255, 255, 0.7);
+  --card-radius: 0px;
+  --card-shadow: 6px 6px 0 #ff10f0, 12px 12px 0 #01cdfe;
+  --card-border: 2px solid #1a0840;
+  --divider: 1px solid rgba(255, 16, 240, 0.3);
+  --today-bg: linear-gradient(160deg, rgba(255,255,255,0.9) 0%, rgba(255,192,244,0.7) 100%);
+  --today-ring: 6px 6px 0 #05ffa1, 12px 12px 0 #ff10f0;
+  --pill-radius: 0px;
+  --pill-1-bg: #ff10f0; --pill-1-ink: #fff;
+  --pill-2-bg: #01cdfe; --pill-2-ink: #1a0840;
+  --pill-3-bg: #05ffa1; --pill-3-ink: #1a0840;
+  --pill-4-bg: #b967ff; --pill-4-ink: #fff;
+  --pill-5-bg: #ffa3fd; --pill-5-ink: #80008a;
+  --pill-6-bg: #fff568; --pill-6-ink: #5a4a08;
+  --pill-7-bg: #ff71ce; --pill-7-ink: #fff;
+  --add-bg: rgba(255, 255, 255, 0.5);
+  --add-ink: #80008a;
+  --add-radius: 0px;
+  --empty-ink: #c4a8d4;
+  --empty-msg: "ｖａｐｏｒ";
+}
+html[data-theme="vapor"] .planner-h1 {
+  font-family: 'VT323', monospace;
+  font-size: 80px;
+  background: linear-gradient(135deg, #ff10f0, #01cdfe);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 0.04em;
+}
+html[data-theme="vapor"] .day-name { font-family: 'VT323', monospace; font-size: 28px; }
+
+/* =========================================================
+   THEME 17: COASTAL 🐚
+   ========================================================= */
+html[data-theme="coastal"] {
+  --font-display: 'Playfair Display', serif;
+  --font-body: 'Lora', serif;
+  --bg-base: #f4f0e6;
+  --bg-blob-a: #cdddd8;
+  --bg-blob-b: #ebd8b8;
+  --ink: #3a5060;
+  --ink-soft: #8aa0a8;
+  --accent: #7ab3a3;
+  --accent-soft: #d8ebe4;
+  --accent-ink: #3a7060;
+  --card-bg: #fffaf0;
+  --card-radius: 14px;
+  --card-shadow: 0 6px 20px rgba(58, 80, 96, 0.1);
+  --card-border: 1px solid rgba(122, 179, 163, 0.2);
+  --divider: 1px solid rgba(58, 80, 96, 0.12);
+  --today-bg: linear-gradient(160deg, #fffaf0 0%, #ebf5f0 100%);
+  --today-ring: 0 0 0 2px #7ab3a3, 0 6px 20px rgba(58, 80, 96, 0.12);
+  --pill-radius: 12px;
+  --pill-1-bg: #d8ebe4; --pill-1-ink: #3a7060;
+  --pill-2-bg: #ebd8b8; --pill-2-ink: #7a5a20;
+  --pill-3-bg: #d4e0ec; --pill-3-ink: #3a5878;
+  --pill-4-bg: #ebd4c4; --pill-4-ink: #80502a;
+  --pill-5-bg: #e4ebd4; --pill-5-ink: #5a702a;
+  --pill-6-bg: #e8e0d4; --pill-6-ink: #6a5840;
+  --pill-7-bg: #d4dce4; --pill-7-ink: #3a4a5a;
+  --add-bg: rgba(122, 179, 163, 0.1);
+  --add-ink: #8aa0a8;
+  --add-radius: 12px;
+  --empty-ink: #c4d0d4;
+  --empty-msg: "~ low tide ~";
+}
+html[data-theme="coastal"] .planner-h1 { font-weight: 500; letter-spacing: -0.01em; }
+html[data-theme="coastal"] .day-name { font-family: 'Playfair Display', serif; font-style: italic; }
+
+/* =========================================================
+   THEME 18: WHIMSIGOTH 🌙
+   ========================================================= */
+html[data-theme="whimsigoth"] {
+  --font-display: 'Cormorant Garamond', serif;
+  --font-body: 'Lora', serif;
+  --bg-base: radial-gradient(ellipse at top, #3a1850 0%, #14081f 70%);
+  --bg-blob-a: #6a2080;
+  --bg-blob-b: #1a6478;
+  --ink: #f0e4c8;
+  --ink-soft: #b89e80;
+  --accent: #d4a850;
+  --accent-soft: #3a2050;
+  --accent-ink: #f0c870;
+  --card-bg: rgba(50, 24, 70, 0.65);
+  --card-radius: 14px;
+  --card-shadow: 0 8px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(212, 168, 80, 0.15);
+  --card-border: 1px solid rgba(212, 168, 80, 0.25);
+  --divider: 1px solid rgba(212, 168, 80, 0.2);
+  --today-bg: linear-gradient(160deg, rgba(70, 30, 100, 0.7) 0%, rgba(100, 40, 130, 0.5) 100%);
+  --today-ring: 0 0 0 2px #d4a850, 0 0 30px rgba(212, 168, 80, 0.4);
+  --pill-radius: 10px;
+  --pill-1-bg: #2a4848; --pill-1-ink: #88d4c8;
+  --pill-2-bg: #4a2050; --pill-2-ink: #d4a8e8;
+  --pill-3-bg: #5a2828; --pill-3-ink: #e89898;
+  --pill-4-bg: #4a3a1a; --pill-4-ink: #f0c870;
+  --pill-5-bg: #1a3a4a; --pill-5-ink: #88c4e8;
+  --pill-6-bg: #3a1a3a; --pill-6-ink: #c888c8;
+  --pill-7-bg: #1a4a3a; --pill-7-ink: #88e8c4;
+  --add-bg: rgba(212, 168, 80, 0.1);
+  --add-ink: #b89e80;
+  --add-radius: 10px;
+  --empty-ink: #6a5a4a;
+  --empty-msg: "✦ ⊹ the stars are quiet ⊹ ✦";
+}
+html[data-theme="whimsigoth"] .planner-h1 {
+  font-style: italic;
+  font-weight: 500;
+  background: linear-gradient(135deg, #d4a850, #e8c498, #d4a850);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+html[data-theme="whimsigoth"] .day-name { font-variant: small-caps; letter-spacing: 0.08em; color: var(--accent); }
+html[data-theme="whimsigoth"] .day-name::before { content: "☾ "; opacity: 0.7; }
+html[data-theme="whimsigoth"] .delete-btn { background: rgba(0,0,0,0.4); color: var(--accent); }
