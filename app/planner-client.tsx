@@ -11,6 +11,7 @@ import {
 
 type PlannerEvent = {
   id: number;
+  eventDate: string; // YYYY-MM-DD
   dayOfWeek: number;
   time: string;
   text: string;
@@ -40,6 +41,20 @@ const MONTHS = [
   "Nov",
   "Dec",
 ];
+const MONTHS_LONG = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
 const THEMES = [
   { id: "bubbly", name: "Bubbly", color: "#ffd1e0" },
@@ -64,24 +79,73 @@ const THEMES = [
 
 const THEME_KEY = "weeklyPlannerTheme_v2";
 const OWNER_KEY = "weeklyPlannerOwner_v1";
+const VIEW_KEY = "weeklyPlannerView_v1";
 
-function getWeekDates(): Date[] {
-  const today = new Date();
-  const sunday = new Date(today);
-  sunday.setDate(today.getDate() - today.getDay());
-  sunday.setHours(0, 0, 0, 0);
-  const out: Date[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(sunday);
-    d.setDate(sunday.getDate() + i);
-    out.push(d);
-  }
-  return out;
+type ViewMode = "week" | "month";
+
+// -------------------- date helpers (all local-calendar, no UTC) --------------------
+
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-function fmtDate(d: Date): string {
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function startOfWeek(d: Date): Date {
+  const x = startOfDay(d);
+  x.setDate(x.getDate() - x.getDay());
+  return x;
+}
+
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function addMonths(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setMonth(x.getMonth() + n);
+  return x;
+}
+
+function weekDates(d: Date): Date[] {
+  const start = startOfWeek(d);
+  return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+}
+
+// 6-week grid (42 cells) anchored on the Sunday before/at the month's 1st.
+// Keeps layout stable across months.
+function monthGridDates(d: Date): Date[] {
+  const firstOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  const gridStart = startOfWeek(firstOfMonth);
+  return Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function fmtMonthDay(d: Date): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
+
+function fmtMonthYear(d: Date): string {
+  return `${MONTHS_LONG[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// -------------------- misc --------------------
 
 function isValidName(s: string): boolean {
   const t = s.trim();
@@ -98,15 +162,19 @@ export default function PlannerClient() {
   const [hydrated, setHydrated] = useState(false);
   const [events, setEvents] = useState<PlannerEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [view, setView] = useState<ViewMode>("week");
+  // The "anchor" date — for week view, any date in the visible week;
+  // for month view, any date in the visible month. Starts at today.
+  const [viewDate, setViewDate] = useState<Date>(() => startOfDay(new Date()));
   const [modal, setModal] = useState<{
     open: boolean;
-    dayOfWeek: number;
+    date: string; // YYYY-MM-DD
     editingId: number | null;
     initialTime: string;
     initialText: string;
   }>({
     open: false,
-    dayOfWeek: 0,
+    date: ymd(new Date()),
     editingId: null,
     initialTime: "",
     initialText: "",
@@ -120,6 +188,8 @@ export default function PlannerClient() {
       if (t) setTheme(t);
       const o = localStorage.getItem(OWNER_KEY);
       if (o) setOwner(o);
+      const v = localStorage.getItem(VIEW_KEY);
+      if (v === "week" || v === "month") setView(v);
     } catch {}
     setHydrated(true);
   }, []);
@@ -131,6 +201,13 @@ export default function PlannerClient() {
       localStorage.setItem(THEME_KEY, theme);
     } catch {}
   }, [theme]);
+
+  // Persist view mode
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, view);
+    } catch {}
+  }, [view]);
 
   // Load events when we know who the user is
   const loadEvents = useCallback(async (who: string) => {
@@ -163,17 +240,20 @@ export default function PlannerClient() {
     } catch {}
   }
 
-  const dates = getWeekDates();
-  const todayIdx = new Date().getDay();
-  const eventsByDay: PlannerEvent[][] = [[], [], [], [], [], [], []];
+  // Group events by date (YYYY-MM-DD) for quick lookup
+  const eventsByDate = new Map<string, PlannerEvent[]>();
   for (const e of events) {
-    if (e.dayOfWeek >= 0 && e.dayOfWeek < 7) eventsByDay[e.dayOfWeek].push(e);
+    const arr = eventsByDate.get(e.eventDate);
+    if (arr) arr.push(e);
+    else eventsByDate.set(e.eventDate, [e]);
   }
 
-  function openAdd(dayOfWeek: number) {
+  const today = startOfDay(new Date());
+
+  function openAdd(date: Date) {
     setModal({
       open: true,
-      dayOfWeek,
+      date: ymd(date),
       editingId: null,
       initialTime: "",
       initialText: "",
@@ -183,7 +263,7 @@ export default function PlannerClient() {
   function openEdit(ev: PlannerEvent) {
     setModal({
       open: true,
-      dayOfWeek: ev.dayOfWeek,
+      date: ev.eventDate,
       editingId: ev.id,
       initialTime: ev.time,
       initialText: ev.text,
@@ -196,7 +276,7 @@ export default function PlannerClient() {
 
   function handleSave(time: string, text: string) {
     if (!owner) return;
-    const { editingId, dayOfWeek } = modal;
+    const { editingId, date } = modal;
     closeModal();
     if (!text.trim()) {
       if (editingId !== null) {
@@ -208,7 +288,7 @@ export default function PlannerClient() {
       if (editingId !== null) {
         return updateEvent(owner, editingId, time, text);
       }
-      return addEvent(owner, dayOfWeek, time, text);
+      return addEvent(owner, date, time, text);
     });
   }
 
@@ -219,20 +299,31 @@ export default function PlannerClient() {
 
   function handleClearAll() {
     if (!owner) return;
-    if (confirm("erase the whole week?")) {
+    const word = view === "week" ? "the whole week" : "every event you've made";
+    if (confirm(`erase ${word}?`)) {
       startTransition(() => clearAllEvents(owner));
     }
+  }
+
+  function goPrev() {
+    setViewDate((d) => (view === "week" ? addDays(d, -7) : addMonths(d, -1)));
+  }
+  function goNext() {
+    setViewDate((d) => (view === "week" ? addDays(d, 7) : addMonths(d, 1)));
+  }
+  function goToday() {
+    setViewDate(startOfDay(new Date()));
   }
 
   // Show the "what's your name?" gate until they pick one.
   if (!hydrated) return null;
   if (!owner) {
-    return (
-      <NameGate
-        onChoose={(n) => chooseOwner(n)}
-      />
-    );
+    return <NameGate onChoose={(n) => chooseOwner(n)} />;
   }
+
+  const weekDays = weekDates(viewDate);
+  const monthDays = monthGridDates(viewDate);
+  const visibleMonth = viewDate.getMonth();
 
   return (
     <>
@@ -257,13 +348,62 @@ export default function PlannerClient() {
 
       <div className="planner">
         <header className="planner-header">
-          <h1 className="planner-h1">{prettyName(owner)}&apos;s Week</h1>
+          <h1 className="planner-h1">
+            {prettyName(owner)}&apos;s {view === "week" ? "Week" : "Month"}
+          </h1>
           <div className="subtitle">
-            week of {fmtDate(dates[0])} &nbsp;→&nbsp; {fmtDate(dates[6])}
+            {view === "week"
+              ? `week of ${fmtMonthDay(weekDays[0])}  →  ${fmtMonthDay(weekDays[6])}`
+              : fmtMonthYear(viewDate)}
           </div>
+
+          <div className="view-controls">
+            <button
+              type="button"
+              className="nav-btn"
+              onClick={goPrev}
+              aria-label={view === "week" ? "Previous week" : "Previous month"}
+            >
+              ←
+            </button>
+            <button type="button" className="today-btn" onClick={goToday}>
+              today
+            </button>
+            <button
+              type="button"
+              className="nav-btn"
+              onClick={goNext}
+              aria-label={view === "week" ? "Next week" : "Next month"}
+            >
+              →
+            </button>
+            <div className="view-toggle" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === "week"}
+                className={`view-toggle-btn ${view === "week" ? "active" : ""}`}
+                onClick={() => setView("week")}
+              >
+                Week
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === "month"}
+                className={`view-toggle-btn ${view === "month" ? "active" : ""}`}
+                onClick={() => setView("month")}
+              >
+                Month
+              </button>
+            </div>
+          </div>
+
           <div className="user-row">
             <span className="db-badge">
-              {loading ? "loading…" : `${events.length} event${events.length === 1 ? "" : "s"}`}
+              {loading
+                ? "loading…"
+                : `${events.length} event${events.length === 1 ? "" : "s"}`}
             </span>
             <button
               type="button"
@@ -275,61 +415,114 @@ export default function PlannerClient() {
           </div>
         </header>
 
-        <div className="week-grid">
-          {dates.map((date, i) => {
-            const dayEvents = eventsByDay[i];
-            return (
-              <div
-                key={i}
-                className={`day-column ${i === todayIdx ? "today" : ""}`}
-              >
-                <div className="day-header">
-                  <div className="day-name">{DAYS_SHORT[i]}</div>
-                  <div className="day-date">{fmtDate(date)}</div>
-                </div>
+        {view === "week" ? (
+          <div className="week-grid">
+            {weekDays.map((date) => {
+              const dayEvents = eventsByDate.get(ymd(date)) ?? [];
+              const isToday = isSameDay(date, today);
+              return (
+                <div
+                  key={ymd(date)}
+                  className={`day-column ${isToday ? "today" : ""}`}
+                >
+                  <div className="day-header">
+                    <div className="day-name">
+                      {DAYS_SHORT[date.getDay()]}
+                    </div>
+                    <div className="day-date">{fmtMonthDay(date)}</div>
+                  </div>
 
-                <div className="events">
-                  {dayEvents.length === 0 ? (
-                    <div className="empty-msg" />
-                  ) : (
-                    dayEvents.map((ev) => (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        className="event-pill"
-                        onClick={() => openEdit(ev)}
-                      >
-                        {ev.time && (
-                          <span className="event-time">{ev.time}</span>
-                        )}
-                        <span className="event-text">{ev.text}</span>
+                  <div className="events">
+                    {dayEvents.length === 0 ? (
+                      <div className="empty-msg" />
+                    ) : (
+                      dayEvents.map((ev) => (
+                        <button
+                          key={ev.id}
+                          type="button"
+                          className="event-pill"
+                          onClick={() => openEdit(ev)}
+                        >
+                          {ev.time && (
+                            <span className="event-time">{ev.time}</span>
+                          )}
+                          <span className="event-text">{ev.text}</span>
+                          <span
+                            className="delete-btn"
+                            role="button"
+                            aria-label="delete"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(ev.id);
+                            }}
+                          >
+                            ✕
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="add-btn"
+                    onClick={() => openAdd(date)}
+                  >
+                    + add
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="month-view">
+            <div className="month-weekday-row">
+              {DAYS_SHORT.map((d) => (
+                <div key={d} className="month-weekday">
+                  {d}
+                </div>
+              ))}
+            </div>
+            <div className="month-grid">
+              {monthDays.map((date) => {
+                const dayEvents = eventsByDate.get(ymd(date)) ?? [];
+                const isToday = isSameDay(date, today);
+                const inMonth = date.getMonth() === visibleMonth;
+                return (
+                  <button
+                    key={ymd(date)}
+                    type="button"
+                    className={`month-cell ${isToday ? "today" : ""} ${inMonth ? "" : "outside"}`}
+                    onClick={() => openAdd(date)}
+                    aria-label={`Add event on ${fmtMonthDay(date)}`}
+                  >
+                    <div className="month-cell-date">{date.getDate()}</div>
+                    <div className="month-cell-events">
+                      {dayEvents.slice(0, 3).map((ev) => (
                         <span
-                          className="delete-btn"
-                          role="button"
-                          aria-label="delete"
+                          key={ev.id}
+                          className="month-event"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDelete(ev.id);
+                            openEdit(ev);
                           }}
                         >
-                          ✕
+                          {ev.time ? `${ev.time} · ` : ""}
+                          {ev.text}
                         </span>
-                      </button>
-                    ))
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  className="add-btn"
-                  onClick={() => openAdd(i)}
-                >
-                  + add
-                </button>
-              </div>
-            );
-          })}
-        </div>
+                      ))}
+                      {dayEvents.length > 3 && (
+                        <span className="month-more">
+                          +{dayEvents.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="footer-note">
           <button
@@ -345,7 +538,11 @@ export default function PlannerClient() {
 
       {modal.open && (
         <EventModal
-          dayName={DAYS_LONG[modal.dayOfWeek]}
+          dateLabel={(() => {
+            const [y, m, d] = modal.date.split("-").map(Number);
+            const dt = new Date(y, m - 1, d);
+            return `${DAYS_LONG[dt.getDay()]}, ${fmtMonthDay(dt)}`;
+          })()}
           editing={modal.editingId !== null}
           initialTime={modal.initialTime}
           initialText={modal.initialText}
@@ -402,14 +599,14 @@ function NameGate({ onChoose }: { onChoose: (name: string) => void }) {
 }
 
 function EventModal({
-  dayName,
+  dateLabel,
   editing,
   initialTime,
   initialText,
   onCancel,
   onSave,
 }: {
-  dayName: string;
+  dateLabel: string;
   editing: boolean;
   initialTime: string;
   initialText: string;
@@ -437,7 +634,7 @@ function EventModal({
     >
       <div className="modal">
         <h2>{editing ? "Edit note" : "Add a note"}</h2>
-        <div className="modal-sub">for {dayName}</div>
+        <div className="modal-sub">for {dateLabel}</div>
 
         <label htmlFor="evTime">Time (optional)</label>
         <input

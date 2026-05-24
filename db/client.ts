@@ -59,5 +59,16 @@ export async function ensureSchema(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE events ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT ''
   `);
+  // v2: events live on a real date, not just a day of the week. Add the
+  // column and backfill anything still null by dropping the old day_of_week
+  // onto the current week (Sunday = 0, so today's Sunday + day_of_week days).
+  await db.execute(sql`
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS event_date DATE
+  `);
+  await db.execute(sql`
+    UPDATE events
+    SET event_date = (CURRENT_DATE - EXTRACT(DOW FROM CURRENT_DATE)::int + day_of_week)
+    WHERE event_date IS NULL
+  `);
   globalForDb.__plannerSchemaReady = true;
 }
