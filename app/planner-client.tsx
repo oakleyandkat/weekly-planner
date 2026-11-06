@@ -1233,6 +1233,11 @@ function LandingHero({ onStart }: { onStart: () => void }) {
 
 type HelperTab = "tips" | "quick" | "chat";
 
+// Chat tab is hidden by default — flip this to true when ANTHROPIC_API_KEY
+// is set in the Suga env so the AI chat is actually usable (otherwise users
+// see a "not set up" message that's just confusing).
+const SHOW_CHAT_TAB = false;
+
 // Grade-based study tips. Each entry is 2-4 short bullet strings.
 function tipsFor(role: "student" | "teacher" | "", grade: string): string[] {
   if (role === "teacher") {
@@ -1434,15 +1439,17 @@ function HelperWidget({
             >
               ⚡ quick add
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "chat"}
-              className={`helper-tab ${tab === "chat" ? "active" : ""}`}
-              onClick={() => setTab("chat")}
-            >
-              💬 chat
-            </button>
+            {SHOW_CHAT_TAB && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "chat"}
+                className={`helper-tab ${tab === "chat" ? "active" : ""}`}
+                onClick={() => setTab("chat")}
+              >
+                💬 chat
+              </button>
+            )}
           </div>
 
           <div className="helper-body">
@@ -1490,7 +1497,7 @@ function HelperWidget({
               </div>
             )}
 
-            {tab === "chat" && (
+            {SHOW_CHAT_TAB && tab === "chat" && (
               <div className="helper-chat">
                 {chat.length === 0 && !chatError && (
                   <div className="helper-chat-hint">
