@@ -9,6 +9,7 @@ import {
   getEventsForOwner,
   getProfile,
   saveProfile,
+  addBulkEvents,
   type ProfileDTO,
 } from "./actions";
 
@@ -112,6 +113,49 @@ function categoriesFor(role: Role | ""): readonly {
   return STUDENT_CATEGORIES;
 }
 
+// Typical US-school class lists by grade. Used to pre-fill a student's week.
+// Normalise grade input first (handles "10", "tenth", "sophomore", etc.).
+function gradeKey(grade: string): string {
+  const g = grade.trim().toLowerCase();
+  if (/^(pre-?k|pk|prekinder)/.test(g)) return "prek";
+  if (/^(k|kinder)/.test(g)) return "k";
+  if (g === "1" || g.includes("first")) return "1";
+  if (g === "2" || g.includes("second")) return "2";
+  if (g === "3" || g.includes("third")) return "3";
+  if (g === "4" || g.includes("fourth")) return "4";
+  if (g === "5" || g.includes("fifth")) return "5";
+  if (g === "6" || g.includes("sixth")) return "6";
+  if (g === "7" || g.includes("seventh")) return "7";
+  if (g === "8" || g.includes("eighth")) return "8";
+  if (g === "9" || g.includes("freshman") || g.includes("ninth")) return "9";
+  if (g === "10" || g.includes("sophomore") || g.includes("tenth")) return "10";
+  if (g === "11" || g.includes("junior") || g.includes("eleventh")) return "11";
+  if (g === "12" || g.includes("senior") || g.includes("twelfth")) return "12";
+  return "other";
+}
+
+const GRADE_CLASSES: Record<string, string[]> = {
+  prek: ["Circle Time", "Art", "Story Time", "Play"],
+  k: ["Reading", "Math", "Science", "Art", "Music"],
+  "1": ["Reading", "Math", "Science", "Social Studies", "Art"],
+  "2": ["Reading", "Math", "Science", "Social Studies", "Art", "PE"],
+  "3": ["Reading", "Math", "Science", "Social Studies", "Art", "PE"],
+  "4": ["Reading", "Math", "Science", "Social Studies", "Art", "PE"],
+  "5": ["Reading", "Math", "Science", "Social Studies", "Art", "PE"],
+  "6": ["English", "Math", "Science", "Social Studies", "PE", "Elective"],
+  "7": ["English", "Math", "Science", "Social Studies", "PE", "Elective"],
+  "8": ["English", "Pre-Algebra", "Science", "Social Studies", "PE", "Elective"],
+  "9": ["English 9", "Algebra I", "Biology", "World History", "PE / Health", "Elective"],
+  "10": ["English 10", "Geometry", "Chemistry", "US History", "Foreign Language", "Elective"],
+  "11": ["English 11", "Algebra II", "Physics", "US Government", "Foreign Language", "Elective"],
+  "12": ["English 12", "Pre-Calculus", "Science", "Economics", "Foreign Language", "Elective"],
+  other: ["English", "Math", "Science", "Social Studies", "PE"],
+};
+
+function suggestedClassesFor(grade: string): string[] {
+  return GRADE_CLASSES[gradeKey(grade)] ?? GRADE_CLASSES.other;
+}
+
 const THEME_KEY = "weeklyPlannerTheme_v2";
 const OWNER_KEY = "weeklyPlannerOwner_v1";
 const VIEW_KEY = "weeklyPlannerView_v1";
@@ -199,6 +243,9 @@ export default function PlannerClient() {
   // Separate flag for profile-fetched. Until this is true, we show a loading
   // state instead of flashing the onboarding wizard at returning users.
   const [profileChecked, setProfileChecked] = useState(false);
+  // One-shot: after a student completes onboarding, show the "pre-fill your
+  // classes" screen before dropping them into the planner. Teachers skip it.
+  const [showClassPrefill, setShowClassPrefill] = useState(false);
   const [events, setEvents] = useState<PlannerEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<ViewMode>("week");
@@ -313,6 +360,37 @@ export default function PlannerClient() {
     // Reload so the planner header + category set reflect the new profile.
     const next = await getProfile(owner);
     setProfile(next);
+    // Students get the one-time class pre-fill screen next. Teachers go
+    // straight to the planner.
+    if (role === "student") setShowClassPrefill(true);
+  }
+
+  async function handleClassPrefill(classNames: string[]) {
+    if (!owner) return;
+    if (classNames.length === 0) {
+      setShowClassPrefill(false);
+      return;
+    }
+    // Add each selected class as an event on every weekday (Mon-Fri) of the
+    // current week. No time set — the student edits per-day after.
+    const weekStart = startOfWeek(startOfDay(new Date()));
+    const items: Array<{
+      eventDate: string;
+      time: string;
+      text: string;
+      category: string;
+    }> = [];
+    for (let i = 1; i <= 5; i++) {
+      // 1 = Monday, 5 = Friday
+      const date = ymd(addDays(weekStart, i));
+      for (const name of classNames) {
+        items.push({ eventDate: date, time: "", text: name, category: "class" });
+      }
+    }
+    await addBulkEvents(owner, items);
+    setShowClassPrefill(false);
+    // Refresh events so the new class schedule shows up right away.
+    await loadEvents(owner);
   }
 
   // Group events by date (YYYY-MM-DD) for quick lookup
@@ -425,6 +503,16 @@ export default function PlannerClient() {
         initialName={owner}
         onPickName={() => {}}
         onComplete={handleProfileComplete}
+      />
+    );
+  }
+
+  // One-shot pre-fill screen for freshly-onboarded students.
+  if (showClassPrefill && profile.role === "student") {
+    return (
+      <ClassPrefill
+        grade={profile.grade}
+        onDone={handleClassPrefill}
       />
     );
   }
@@ -840,7 +928,9 @@ function Onboarding({
             <StepDots step={skipName ? 2 : 3} total={skipName ? 2 : 3} />
             <h1 className="onboard-h1">one more thing</h1>
             <p className="subtitle">
-              what school &amp; {role === "teacher" ? "what do you teach" : "what grade"}? (optional — you can skip)
+              {role === "teacher"
+                ? "tells the planner what you teach so the right categories show up."
+                : "tells the planner what you're learning so it can set up the right classes for you."}
             </p>
             <form onSubmit={finish}>
               <label htmlFor="ob-school" className="onboard-label">
@@ -859,6 +949,7 @@ function Onboarding({
                 onChange={(e) => setSchool(e.target.value)}
                 maxLength={60}
                 autoFocus
+                required
               />
               <label htmlFor="ob-grade" className="onboard-label">
                 {role === "teacher" ? "subject / role" : "grade"}
@@ -875,19 +966,24 @@ function Onboarding({
                 value={grade}
                 onChange={(e) => setGrade(e.target.value)}
                 maxLength={20}
+                required
               />
               <div className="onboard-actions">
-                <button
-                  type="button"
-                  className="link-btn"
-                  onClick={() => setStep(2)}
-                >
-                  ← back
-                </button>
+                {!skipName && (
+                  <button
+                    type="button"
+                    className="link-btn"
+                    onClick={() => setStep(2)}
+                  >
+                    ← back
+                  </button>
+                )}
                 <button
                   type="submit"
                   className="save-btn name-submit"
-                  disabled={saving}
+                  disabled={
+                    saving || !school.trim() || !grade.trim()
+                  }
                 >
                   {saving ? "saving…" : "open my planner →"}
                 </button>
@@ -895,6 +991,134 @@ function Onboarding({
             </form>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ClassPrefill({
+  grade,
+  onDone,
+}: {
+  grade: string;
+  onDone: (selected: string[]) => Promise<void> | void;
+}) {
+  const suggested = suggestedClassesFor(grade);
+  // Selection map: class name → checked. All on by default.
+  const [picked, setPicked] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(suggested.map((c) => [c, true])),
+  );
+  // Custom extra classes the student adds in-line.
+  const [extras, setExtras] = useState<string[]>([]);
+  const [newClass, setNewClass] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function toggle(name: string) {
+    setPicked((p) => ({ ...p, [name]: !p[name] }));
+  }
+
+  function addExtra() {
+    const t = newClass.trim();
+    if (!t) return;
+    if (extras.includes(t) || suggested.includes(t)) {
+      setNewClass("");
+      return;
+    }
+    setExtras((e) => [...e, t]);
+    setPicked((p) => ({ ...p, [t]: true }));
+    setNewClass("");
+  }
+
+  const allClasses = [...suggested, ...extras];
+  const selected = allClasses.filter((c) => picked[c]);
+
+  async function submit(wantClasses: boolean) {
+    setSaving(true);
+    try {
+      await onDone(wantClasses ? selected : []);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const gradeLabel = grade || "your grade";
+
+  return (
+    <div className="onboard">
+      <div className="onboard-card">
+        <div className="hero-badge">🎉 last step</div>
+        <h1 className="onboard-h1">pre-fill your classes?</h1>
+        <p className="subtitle">
+          these are the classes most students in <b>{gradeLabel}</b> take.
+          uncheck any you&apos;re not in, or add your own. we&apos;ll add them
+          to Mon–Fri this week.
+        </p>
+
+        <ul className="class-list">
+          {allClasses.map((name) => (
+            <li key={name}>
+              <label className="class-row">
+                <input
+                  type="checkbox"
+                  checked={!!picked[name]}
+                  onChange={() => toggle(name)}
+                />
+                <span className="class-name">
+                  <span className="class-emoji" aria-hidden>
+                    📚
+                  </span>
+                  {name}
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+
+        <div className="class-add-row">
+          <input
+            type="text"
+            className="class-add-input"
+            placeholder="add another class (Spanish, Band...)"
+            value={newClass}
+            onChange={(e) => setNewClass(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addExtra();
+              }
+            }}
+            maxLength={40}
+          />
+          <button
+            type="button"
+            className="class-add-btn"
+            onClick={addExtra}
+            disabled={!newClass.trim()}
+          >
+            + add
+          </button>
+        </div>
+
+        <div className="onboard-actions">
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => submit(false)}
+            disabled={saving}
+          >
+            skip for now
+          </button>
+          <button
+            type="button"
+            className="save-btn name-submit"
+            onClick={() => submit(true)}
+            disabled={saving || selected.length === 0}
+          >
+            {saving
+              ? "adding…"
+              : `add ${selected.length} class${selected.length === 1 ? "" : "es"} →`}
+          </button>
+        </div>
       </div>
     </div>
   );

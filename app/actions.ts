@@ -166,6 +166,41 @@ export async function clearAllEvents(rawOwner: string): Promise<void> {
   revalidatePath("/");
 }
 
+// Bulk insert for pre-filling a schedule from an onboarding template.
+// Each item is {eventDate, time, text, category}. Bad items are silently
+// dropped so one weird row can't block the batch.
+export async function addBulkEvents(
+  rawOwner: string,
+  items: Array<{
+    eventDate: string;
+    time?: string;
+    text: string;
+    category?: string;
+  }>,
+): Promise<void> {
+  await ensureSchema();
+  const owner = normaliseOwner(rawOwner);
+  if (!owner) return;
+  const rows = items
+    .map((it) => {
+      const eventDate = normaliseDate(it.eventDate);
+      const text = (it.text ?? "").trim();
+      if (!eventDate || !text) return null;
+      return {
+        owner,
+        eventDate,
+        dayOfWeek: dayOfWeekFor(eventDate),
+        time: (it.time ?? "").trim(),
+        text,
+        category: normaliseCategory(it.category ?? ""),
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  if (rows.length === 0) return;
+  await db.insert(events).values(rows);
+  revalidatePath("/");
+}
+
 // ------- profiles -------
 
 export type ProfileDTO = {
