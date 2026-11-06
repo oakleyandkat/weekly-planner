@@ -243,6 +243,12 @@ export default function PlannerClient() {
   // Separate flag for profile-fetched. Until this is true, we show a loading
   // state instead of flashing the onboarding wizard at returning users.
   const [profileChecked, setProfileChecked] = useState(false);
+  // True while the user is in the onboarding wizard. Default true so a fresh
+  // visitor sees the hero + wizard. Set false on hydrate when localStorage
+  // already has an owner (returning user). Critical: we keep this true across
+  // the whole wizard so that a name collision with an existing profile does
+  // NOT short-circuit the flow into the planner.
+  const [inOnboarding, setInOnboarding] = useState(true);
   // One-shot: after a student completes onboarding, show the "pre-fill your
   // classes" screen before dropping them into the planner. Teachers skip it.
   const [showClassPrefill, setShowClassPrefill] = useState(false);
@@ -275,12 +281,31 @@ export default function PlannerClient() {
       const t = localStorage.getItem(THEME_KEY);
       if (t) setTheme(t);
       const o = localStorage.getItem(OWNER_KEY);
-      if (o) setOwner(o);
+      if (o) {
+        setOwner(o);
+        // Returning user — skip the wizard, go straight to planner.
+        setInOnboarding(false);
+      }
       const v = localStorage.getItem(VIEW_KEY);
       if (v === "week" || v === "month") setView(v);
     } catch {}
     setHydrated(true);
   }, []);
+
+  // Catch the "old user whose profile predates this update" case: they have
+  // an owner in localStorage, but the profile has no role. Nudge them back
+  // into the wizard (skipName=true) so they can fill role + school + grade.
+  useEffect(() => {
+    if (
+      hydrated &&
+      !inOnboarding &&
+      owner &&
+      profileChecked &&
+      (!profile || !profile.role)
+    ) {
+      setInOnboarding(true);
+    }
+  }, [hydrated, inOnboarding, owner, profileChecked, profile]);
 
   // Apply theme to <html> + persist
   useEffect(() => {
@@ -344,6 +369,8 @@ export default function PlannerClient() {
     setProfile(null);
     setProfileChecked(false);
     setEvents([]);
+    setInOnboarding(true);
+    setShowClassPrefill(false);
     try {
       localStorage.removeItem(OWNER_KEY);
     } catch {}
@@ -357,12 +384,21 @@ export default function PlannerClient() {
   ) {
     if (!owner) return;
     await saveProfile(owner, displayName, role, school, grade);
-    // Reload so the planner header + category set reflect the new profile.
-    const next = await getProfile(owner);
+    // Reload profile AND events so the header is right and we can decide
+    // whether to show the class pre-fill (skip it if this owner already has
+    // class events — otherwise re-onboarding doubles up their schedule).
+    const [next, currentEvents] = await Promise.all([
+      getProfile(owner),
+      getEventsForOwner(owner),
+    ]);
     setProfile(next);
-    // Students get the one-time class pre-fill screen next. Teachers go
-    // straight to the planner.
-    if (role === "student") setShowClassPrefill(true);
+    setEvents(currentEvents);
+    const hasClasses = currentEvents.some((e) => e.category === "class");
+    if (role === "student" && !hasClasses) {
+      setShowClassPrefill(true);
+    }
+    // Exit the wizard — show the planner (or the pre-fill screen first).
+    setInOnboarding(false);
   }
 
   async function handleClassPrefill(classNames: string[]) {
@@ -475,10 +511,14 @@ export default function PlannerClient() {
 
   if (!hydrated) return null;
 
-  // No owner yet → full onboarding (landing → name → role → school)
-  if (!owner) {
+  // Single Onboarding render path — stays mounted across all steps so that
+  // picking a name that collides with an existing profile does NOT skip past
+  // the role / school / grade screens.
+  if (inOnboarding) {
     return (
       <Onboarding
+        skipName={!!owner}
+        initialName={owner ?? ""}
         onPickName={(n) => chooseOwner(n)}
         onComplete={handleProfileComplete}
       />
@@ -486,7 +526,7 @@ export default function PlannerClient() {
   }
 
   // Have owner, still loading their profile → small skeleton
-  if (!profileChecked) {
+  if (owner && !profileChecked) {
     return (
       <div className="loading-screen">
         <span>loading your planner…</span>
@@ -494,26 +534,24 @@ export default function PlannerClient() {
     );
   }
 
-  // Have owner but no role saved (old user before this update) → ask them
-  // to finish onboarding (role + school + grade). Name is already set.
-  if (!profile || !profile.role) {
-    return (
-      <Onboarding
-        skipName
-        initialName={owner}
-        onPickName={() => {}}
-        onComplete={handleProfileComplete}
-      />
-    );
-  }
-
   // One-shot pre-fill screen for freshly-onboarded students.
-  if (showClassPrefill && profile.role === "student") {
+  if (showClassPrefill && profile?.role === "student") {
     return (
       <ClassPrefill
         grade={profile.grade}
         onDone={handleClassPrefill}
       />
+    );
+  }
+
+  // Safety net — we shouldn't get here without a complete profile and owner,
+  // but if we do, show the loading screen to avoid a crash. Also narrows the
+  // types for the main planner render below.
+  if (!owner || !profile || !profile.role) {
+    return (
+      <div className="loading-screen">
+        <span>loading your planner…</span>
+      </div>
     );
   }
 
@@ -807,8 +845,11 @@ function Onboarding({
     grade: string,
   ) => Promise<void>;
 }) {
+  // Snapshot skipName at mount so parent prop changes (e.g. owner being set
+  // after the user picks their name) can't yank the step dots around.
+  const [initialSkip] = useState(skipName);
   // step 0 = landing hero, 1 = name, 2 = role, 3 = school/grade
-  const [step, setStep] = useState<number>(skipName ? 2 : 0);
+  const [step, setStep] = useState<number>(initialSkip ? 2 : 0);
   const [name, setName] = useState(initialName);
   const [role, setRole] = useState<Role | "">("");
   const [school, setSchool] = useState("");
@@ -881,7 +922,7 @@ function Onboarding({
 
         {step === 2 && (
           <>
-            <StepDots step={skipName ? 1 : 2} total={skipName ? 2 : 3} />
+            <StepDots step={initialSkip ? 1 : 2} total={initialSkip ? 2 : 3} />
             <h1 className="onboard-h1">are you a student or a teacher?</h1>
             <p className="subtitle">
               we&apos;ll pick the right categories for you (homework vs lesson
@@ -911,7 +952,7 @@ function Onboarding({
                 </div>
               </button>
             </div>
-            {!skipName && (
+            {!initialSkip && (
               <button
                 type="button"
                 className="link-btn"
@@ -925,7 +966,7 @@ function Onboarding({
 
         {step === 3 && (
           <>
-            <StepDots step={skipName ? 2 : 3} total={skipName ? 2 : 3} />
+            <StepDots step={initialSkip ? 2 : 3} total={initialSkip ? 2 : 3} />
             <h1 className="onboard-h1">one more thing</h1>
             <p className="subtitle">
               {role === "teacher"
@@ -969,7 +1010,7 @@ function Onboarding({
                 required
               />
               <div className="onboard-actions">
-                {!skipName && (
+                {!initialSkip && (
                   <button
                     type="button"
                     className="link-btn"
