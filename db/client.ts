@@ -70,5 +70,22 @@ export async function ensureSchema(): Promise<void> {
     SET event_date = (CURRENT_DATE - EXTRACT(DOW FROM CURRENT_DATE)::int + day_of_week)
     WHERE event_date IS NULL
   `);
+  // v3: events get an optional category tag ("class", "homework", "test"...)
+  await db.execute(sql`
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT ''
+  `);
+  // v3: each owner has an optional profile (role, school, grade). The old
+  // name-only gate just set owner on events, so this table may be empty for
+  // existing users — they'll see the school/grade/role step next time.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS profiles (
+      owner TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL DEFAULT '',
+      role TEXT NOT NULL DEFAULT '',
+      school TEXT NOT NULL DEFAULT '',
+      grade TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
   globalForDb.__plannerSchemaReady = true;
 }

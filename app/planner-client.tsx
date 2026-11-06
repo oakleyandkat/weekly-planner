@@ -7,6 +7,9 @@ import {
   deleteEvent,
   clearAllEvents,
   getEventsForOwner,
+  getProfile,
+  saveProfile,
+  type ProfileDTO,
 } from "./actions";
 
 type PlannerEvent = {
@@ -15,7 +18,10 @@ type PlannerEvent = {
   dayOfWeek: number;
   time: string;
   text: string;
+  category: string;
 };
+
+type Role = "student" | "teacher";
 
 const DAYS_LONG = [
   "Sunday",
@@ -76,6 +82,35 @@ const THEMES = [
   { id: "coastal", name: "Coastal 🐚", color: "#7ab3a3" },
   { id: "whimsigoth", name: "Whimsigoth 🌙", color: "#d4a850" },
 ] as const;
+
+// Category sets per role. Each category has an emoji for quick scanning.
+// The `id` here maps to an allowed value in actions.ts (normaliseCategory).
+const STUDENT_CATEGORIES = [
+  { id: "class", name: "class", emoji: "📚" },
+  { id: "homework", name: "homework", emoji: "✏️" },
+  { id: "test", name: "test / quiz", emoji: "📝" },
+  { id: "project", name: "project", emoji: "🎯" },
+  { id: "event", name: "school event", emoji: "🎉" },
+  { id: "personal", name: "personal", emoji: "💗" },
+] as const;
+
+const TEACHER_CATEGORIES = [
+  { id: "class", name: "class", emoji: "📚" },
+  { id: "lesson", name: "lesson plan", emoji: "📋" },
+  { id: "grading", name: "grading", emoji: "🖊️" },
+  { id: "meeting", name: "meeting", emoji: "👥" },
+  { id: "event", name: "school event", emoji: "🎉" },
+  { id: "personal", name: "personal", emoji: "💗" },
+] as const;
+
+function categoriesFor(role: Role | ""): readonly {
+  id: string;
+  name: string;
+  emoji: string;
+}[] {
+  if (role === "teacher") return TEACHER_CATEGORIES;
+  return STUDENT_CATEGORIES;
+}
 
 const THEME_KEY = "weeklyPlannerTheme_v2";
 const OWNER_KEY = "weeklyPlannerOwner_v1";
@@ -159,7 +194,11 @@ function prettyName(s: string): string {
 export default function PlannerClient() {
   const [theme, setTheme] = useState<string>("bubbly");
   const [owner, setOwner] = useState<string | null>(null);
+  const [profile, setProfile] = useState<ProfileDTO | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  // Separate flag for profile-fetched. Until this is true, we show a loading
+  // state instead of flashing the onboarding wizard at returning users.
+  const [profileChecked, setProfileChecked] = useState(false);
   const [events, setEvents] = useState<PlannerEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<ViewMode>("week");
@@ -172,12 +211,14 @@ export default function PlannerClient() {
     editingId: number | null;
     initialTime: string;
     initialText: string;
+    initialCategory: string;
   }>({
     open: false,
     date: ymd(new Date()),
     editingId: null,
     initialTime: "",
     initialText: "",
+    initialCategory: "",
   });
   const [pending, startTransition] = useTransition();
 
@@ -209,6 +250,25 @@ export default function PlannerClient() {
     } catch {}
   }, [view]);
 
+  // Load profile when we know who the user is
+  useEffect(() => {
+    let cancelled = false;
+    if (!owner) {
+      setProfile(null);
+      setProfileChecked(hydrated); // true means "we're sure there's no owner"
+      return;
+    }
+    setProfileChecked(false);
+    getProfile(owner).then((p) => {
+      if (cancelled) return;
+      setProfile(p);
+      setProfileChecked(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [owner, hydrated]);
+
   // Load events when we know who the user is
   const loadEvents = useCallback(async (who: string) => {
     setLoading(true);
@@ -234,10 +294,25 @@ export default function PlannerClient() {
 
   function switchUser() {
     setOwner(null);
+    setProfile(null);
+    setProfileChecked(false);
     setEvents([]);
     try {
       localStorage.removeItem(OWNER_KEY);
     } catch {}
+  }
+
+  async function handleProfileComplete(
+    displayName: string,
+    role: Role,
+    school: string,
+    grade: string,
+  ) {
+    if (!owner) return;
+    await saveProfile(owner, displayName, role, school, grade);
+    // Reload so the planner header + category set reflect the new profile.
+    const next = await getProfile(owner);
+    setProfile(next);
   }
 
   // Group events by date (YYYY-MM-DD) for quick lookup
@@ -249,6 +324,7 @@ export default function PlannerClient() {
   }
 
   const today = startOfDay(new Date());
+  const role: Role | "" = profile?.role === "teacher" ? "teacher" : profile?.role === "student" ? "student" : "";
 
   function openAdd(date: Date) {
     setModal({
@@ -257,6 +333,7 @@ export default function PlannerClient() {
       editingId: null,
       initialTime: "",
       initialText: "",
+      initialCategory: "",
     });
   }
 
@@ -267,6 +344,7 @@ export default function PlannerClient() {
       editingId: ev.id,
       initialTime: ev.time,
       initialText: ev.text,
+      initialCategory: ev.category || "",
     });
   }
 
@@ -274,7 +352,7 @@ export default function PlannerClient() {
     setModal((m) => ({ ...m, open: false }));
   }
 
-  function handleSave(time: string, text: string) {
+  function handleSave(time: string, text: string, category: string) {
     if (!owner) return;
     const { editingId, date } = modal;
     closeModal();
@@ -286,9 +364,9 @@ export default function PlannerClient() {
     }
     startTransition(() => {
       if (editingId !== null) {
-        return updateEvent(owner, editingId, time, text);
+        return updateEvent(owner, editingId, time, text, category);
       }
-      return addEvent(owner, date, time, text);
+      return addEvent(owner, date, time, text, category);
     });
   }
 
@@ -315,15 +393,47 @@ export default function PlannerClient() {
     setViewDate(startOfDay(new Date()));
   }
 
-  // Show the "what's your name?" gate until they pick one.
+  // -------- render gates --------
+
   if (!hydrated) return null;
+
+  // No owner yet → full onboarding (landing → name → role → school)
   if (!owner) {
-    return <NameGate onChoose={(n) => chooseOwner(n)} />;
+    return (
+      <Onboarding
+        onPickName={(n) => chooseOwner(n)}
+        onComplete={handleProfileComplete}
+      />
+    );
+  }
+
+  // Have owner, still loading their profile → small skeleton
+  if (!profileChecked) {
+    return (
+      <div className="loading-screen">
+        <span>loading your planner…</span>
+      </div>
+    );
+  }
+
+  // Have owner but no role saved (old user before this update) → ask them
+  // to finish onboarding (role + school + grade). Name is already set.
+  if (!profile || !profile.role) {
+    return (
+      <Onboarding
+        skipName
+        initialName={owner}
+        onPickName={() => {}}
+        onComplete={handleProfileComplete}
+      />
+    );
   }
 
   const weekDays = weekDates(viewDate);
   const monthDays = monthGridDates(viewDate);
   const visibleMonth = viewDate.getMonth();
+  const displayName = profile.displayName || owner;
+  const cats = categoriesFor(role);
 
   return (
     <>
@@ -349,13 +459,32 @@ export default function PlannerClient() {
       <div className="planner">
         <header className="planner-header">
           <h1 className="planner-h1">
-            {prettyName(owner)}&apos;s {view === "week" ? "Week" : "Month"}
+            {prettyName(displayName)}&apos;s {view === "week" ? "Week" : "Month"}
           </h1>
           <div className="subtitle">
             {view === "week"
-              ? `week of ${fmtMonthDay(weekDays[0])}  →  ${fmtMonthDay(weekDays[6])}`
+              ? `week of ${fmtMonthDay(weekDays[0])}  →  ${fmtMonthDay(weekDays[6])}`
               : fmtMonthYear(viewDate)}
           </div>
+
+          {(profile.school || profile.grade || profile.role) && (
+            <div className="profile-row">
+              {profile.role && (
+                <span className={`role-badge role-${profile.role}`}>
+                  {profile.role === "teacher" ? "👩‍🏫 teacher" : "🎒 student"}
+                </span>
+              )}
+              {profile.school && (
+                <span className="profile-chip">🏫 {profile.school}</span>
+              )}
+              {profile.grade && (
+                <span className="profile-chip">
+                  {profile.role === "teacher" ? "" : "grade "}
+                  {profile.grade}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="view-controls">
             <button
@@ -410,7 +539,7 @@ export default function PlannerClient() {
               className="switch-user-btn"
               onClick={switchUser}
             >
-              not {prettyName(owner)}? switch user
+              not {prettyName(displayName)}? switch user
             </button>
           </div>
         </header>
@@ -440,9 +569,19 @@ export default function PlannerClient() {
                         <button
                           key={ev.id}
                           type="button"
-                          className="event-pill"
+                          className={`event-pill cat-${ev.category || "none"}`}
                           onClick={() => openEdit(ev)}
                         >
+                          {ev.category && (
+                            <span
+                              className="event-cat"
+                              aria-hidden
+                              title={ev.category}
+                            >
+                              {cats.find((c) => c.id === ev.category)?.emoji ??
+                                "•"}
+                            </span>
+                          )}
                           {ev.time && (
                             <span className="event-time">{ev.time}</span>
                           )}
@@ -501,12 +640,18 @@ export default function PlannerClient() {
                       {dayEvents.slice(0, 3).map((ev) => (
                         <span
                           key={ev.id}
-                          className="month-event"
+                          className={`month-event cat-${ev.category || "none"}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             openEdit(ev);
                           }}
                         >
+                          {ev.category && (
+                            <span className="event-cat" aria-hidden>
+                              {cats.find((c) => c.id === ev.category)?.emoji ??
+                                "•"}
+                            </span>
+                          )}
                           {ev.time ? `${ev.time} · ` : ""}
                           {ev.text}
                         </span>
@@ -546,6 +691,8 @@ export default function PlannerClient() {
           editing={modal.editingId !== null}
           initialTime={modal.initialTime}
           initialText={modal.initialText}
+          initialCategory={modal.initialCategory}
+          categories={cats}
           onCancel={closeModal}
           onSave={handleSave}
         />
@@ -554,55 +701,273 @@ export default function PlannerClient() {
   );
 }
 
-function NameGate({ onChoose }: { onChoose: (name: string) => void }) {
-  const [name, setName] = useState("");
-  const valid = isValidName(name);
+// -------------------- onboarding --------------------
 
-  function submit(e?: React.FormEvent) {
+function Onboarding({
+  skipName = false,
+  initialName = "",
+  onPickName,
+  onComplete,
+}: {
+  skipName?: boolean;
+  initialName?: string;
+  onPickName: (n: string) => void;
+  onComplete: (
+    displayName: string,
+    role: Role,
+    school: string,
+    grade: string,
+  ) => Promise<void>;
+}) {
+  // step 0 = landing hero, 1 = name, 2 = role, 3 = school/grade
+  const [step, setStep] = useState<number>(skipName ? 2 : 0);
+  const [name, setName] = useState(initialName);
+  const [role, setRole] = useState<Role | "">("");
+  const [school, setSchool] = useState("");
+  const [grade, setGrade] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function startOnboarding() {
+    setStep(1);
+  }
+
+  function submitName(e?: React.FormEvent) {
     e?.preventDefault();
-    if (!valid) return;
-    onChoose(name);
+    if (!isValidName(name)) return;
+    onPickName(name);
+    setStep(2);
+  }
+
+  function pickRole(r: Role) {
+    setRole(r);
+    setStep(3);
+  }
+
+  async function finish(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!role) return;
+    setSaving(true);
+    try {
+      await onComplete(name || initialName, role, school, grade);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <div className="name-gate">
-      <div className="name-gate-card">
-        <h1 className="planner-h1">what&apos;s your name?</h1>
-        <p className="subtitle">
-          this is your planner. give your friends the link — they pick their
-          own name and have their own planner. nobody&apos;s data crosses over.
-        </p>
-        <form onSubmit={submit}>
-          <input
-            type="text"
-            className="name-input"
-            placeholder="your first name..."
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={30}
-            autoFocus
-          />
-          <button
-            type="submit"
-            className="save-btn name-submit"
-            disabled={!valid}
-          >
-            open my planner →
-          </button>
-        </form>
-        <p className="name-hint">
-          letters, numbers, spaces, dashes &amp; underscores · max 30 chars
-        </p>
+    <div className="onboard">
+      <div className="onboard-card">
+        {step === 0 && <LandingHero onStart={startOnboarding} />}
+
+        {step === 1 && (
+          <>
+            <StepDots step={1} total={3} />
+            <h1 className="onboard-h1">first — what&apos;s your name?</h1>
+            <p className="subtitle">
+              this is your planner. share the link with friends — they pick
+              their own name and get their own planner.
+            </p>
+            <form onSubmit={submitName}>
+              <input
+                type="text"
+                className="name-input"
+                placeholder="your first name..."
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={30}
+                autoFocus
+              />
+              <button
+                type="submit"
+                className="save-btn name-submit"
+                disabled={!isValidName(name)}
+              >
+                continue →
+              </button>
+            </form>
+            <p className="name-hint">
+              letters, numbers, spaces, dashes &amp; underscores · max 30 chars
+            </p>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <StepDots step={skipName ? 1 : 2} total={skipName ? 2 : 3} />
+            <h1 className="onboard-h1">are you a student or a teacher?</h1>
+            <p className="subtitle">
+              we&apos;ll pick the right categories for you (homework vs lesson
+              plans, that kind of thing). you can switch later.
+            </p>
+            <div className="role-grid">
+              <button
+                type="button"
+                className={`role-card ${role === "student" ? "selected" : ""}`}
+                onClick={() => pickRole("student")}
+              >
+                <div className="role-emoji">🎒</div>
+                <div className="role-name">student</div>
+                <div className="role-desc">
+                  classes, homework, tests, projects
+                </div>
+              </button>
+              <button
+                type="button"
+                className={`role-card ${role === "teacher" ? "selected" : ""}`}
+                onClick={() => pickRole("teacher")}
+              >
+                <div className="role-emoji">👩‍🏫</div>
+                <div className="role-name">teacher</div>
+                <div className="role-desc">
+                  lessons, grading, meetings, events
+                </div>
+              </button>
+            </div>
+            {!skipName && (
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => setStep(1)}
+              >
+                ← back
+              </button>
+            )}
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <StepDots step={skipName ? 2 : 3} total={skipName ? 2 : 3} />
+            <h1 className="onboard-h1">one more thing</h1>
+            <p className="subtitle">
+              what school &amp; {role === "teacher" ? "what do you teach" : "what grade"}? (optional — you can skip)
+            </p>
+            <form onSubmit={finish}>
+              <label htmlFor="ob-school" className="onboard-label">
+                school
+              </label>
+              <input
+                id="ob-school"
+                type="text"
+                className="name-input"
+                placeholder={
+                  role === "teacher"
+                    ? "Central High School"
+                    : "your school's name"
+                }
+                value={school}
+                onChange={(e) => setSchool(e.target.value)}
+                maxLength={60}
+                autoFocus
+              />
+              <label htmlFor="ob-grade" className="onboard-label">
+                {role === "teacher" ? "subject / role" : "grade"}
+              </label>
+              <input
+                id="ob-grade"
+                type="text"
+                className="name-input"
+                placeholder={
+                  role === "teacher"
+                    ? "English, Grade 10"
+                    : "e.g. 9, 10, freshman..."
+                }
+                value={grade}
+                onChange={(e) => setGrade(e.target.value)}
+                maxLength={20}
+              />
+              <div className="onboard-actions">
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => setStep(2)}
+                >
+                  ← back
+                </button>
+                <button
+                  type="submit"
+                  className="save-btn name-submit"
+                  disabled={saving}
+                >
+                  {saving ? "saving…" : "open my planner →"}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
 }
+
+function LandingHero({ onStart }: { onStart: () => void }) {
+  return (
+    <>
+      <div className="hero-badge">📅 for students &amp; teachers</div>
+      <h1 className="hero-h1">My Week</h1>
+      <p className="hero-tagline">
+        a cute, calm school planner. pick a theme, drop in classes, homework
+        &amp; tests. share the link with friends — they get their own planner.
+      </p>
+      <ul className="hero-features">
+        <li>
+          <span>🎨</span>
+          <div>
+            <b>18 themes</b> — kawaii, dark academia, cottagecore, whatever your
+            vibe
+          </div>
+        </li>
+        <li>
+          <span>📚</span>
+          <div>
+            <b>school mode</b> — categories for homework, tests, projects,
+            lesson plans
+          </div>
+        </li>
+        <li>
+          <span>🗓️</span>
+          <div>
+            <b>week + month views</b> — zoom in on this week, zoom out for the
+            big picture
+          </div>
+        </li>
+        <li>
+          <span>👯</span>
+          <div>
+            <b>your own planner</b> — nobody else sees your stuff; share the
+            link, everyone gets their own
+          </div>
+        </li>
+      </ul>
+      <button type="button" className="save-btn hero-cta" onClick={onStart}>
+        get started →
+      </button>
+    </>
+  );
+}
+
+function StepDots({ step, total }: { step: number; total: number }) {
+  return (
+    <div className="step-dots" aria-label={`step ${step} of ${total}`}>
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          className={`step-dot ${i + 1 === step ? "active" : ""} ${i + 1 < step ? "done" : ""}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+// -------------------- event modal --------------------
 
 function EventModal({
   dateLabel,
   editing,
   initialTime,
   initialText,
+  initialCategory,
+  categories,
   onCancel,
   onSave,
 }: {
@@ -610,20 +975,23 @@ function EventModal({
   editing: boolean;
   initialTime: string;
   initialText: string;
+  initialCategory: string;
+  categories: readonly { id: string; name: string; emoji: string }[];
   onCancel: () => void;
-  onSave: (time: string, text: string) => void;
+  onSave: (time: string, text: string, category: string) => void;
 }) {
   const [time, setTime] = useState(initialTime);
   const [text, setText] = useState(initialText);
+  const [category, setCategory] = useState(initialCategory);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onCancel();
-      if (e.key === "Enter") onSave(time, text);
+      if (e.key === "Enter") onSave(time, text, category);
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [time, text, onCancel, onSave]);
+  }, [time, text, category, onCancel, onSave]);
 
   return (
     <div
@@ -657,6 +1025,27 @@ function EventModal({
           autoFocus
         />
 
+        <label>Category</label>
+        <div className="cat-row">
+          <button
+            type="button"
+            className={`cat-chip cat-none ${category === "" ? "selected" : ""}`}
+            onClick={() => setCategory("")}
+          >
+            none
+          </button>
+          {categories.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={`cat-chip cat-${c.id} ${category === c.id ? "selected" : ""}`}
+              onClick={() => setCategory(c.id)}
+            >
+              <span aria-hidden>{c.emoji}</span> {c.name}
+            </button>
+          ))}
+        </div>
+
         <div className="modal-actions">
           <button type="button" className="cancel-btn" onClick={onCancel}>
             cancel
@@ -664,7 +1053,7 @@ function EventModal({
           <button
             type="button"
             className="save-btn"
-            onClick={() => onSave(time, text)}
+            onClick={() => onSave(time, text, category)}
           >
             save
           </button>

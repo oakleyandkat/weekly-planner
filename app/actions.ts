@@ -1,7 +1,7 @@
 "use server";
 
 import { db, ensureSchema } from "@/db/client";
-import { events } from "@/db/schema";
+import { events, profiles } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
@@ -35,6 +35,34 @@ function dayOfWeekFor(dateStr: string): number {
   return new Date(y, m - 1, d).getDay();
 }
 
+// Allowed category slugs. Anything else is coerced to "" so bad input can't
+// paint events with made-up CSS classes.
+const CATEGORIES = new Set([
+  "",
+  "class",
+  "homework",
+  "test",
+  "project",
+  "event",
+  "personal",
+  "grading",
+  "meeting",
+  "lesson",
+]);
+function normaliseCategory(c: string): string {
+  const t = c.trim().toLowerCase();
+  return CATEGORIES.has(t) ? t : "";
+}
+
+function normaliseRole(r: string): "student" | "teacher" | "" {
+  const t = r.trim().toLowerCase();
+  return t === "student" || t === "teacher" ? t : "";
+}
+
+function clampText(s: string, max: number): string {
+  return s.trim().slice(0, max);
+}
+
 export async function getEventsForOwner(rawOwner: string) {
   await ensureSchema();
   const owner = normaliseOwner(rawOwner);
@@ -59,6 +87,7 @@ export async function getEventsForOwner(rawOwner: string) {
       dayOfWeek: r.dayOfWeek,
       time: r.time,
       text: r.text,
+      category: r.category ?? "",
     };
   });
 }
@@ -68,6 +97,7 @@ export async function addEvent(
   rawDate: string,
   time: string,
   text: string,
+  category: string = "",
 ): Promise<void> {
   await ensureSchema();
   const owner = normaliseOwner(rawOwner);
@@ -82,6 +112,7 @@ export async function addEvent(
     dayOfWeek: dayOfWeekFor(eventDate),
     time: time.trim(),
     text: trimmed,
+    category: normaliseCategory(category),
   });
   revalidatePath("/");
 }
@@ -91,6 +122,7 @@ export async function updateEvent(
   id: number,
   time: string,
   text: string,
+  category: string = "",
 ): Promise<void> {
   await ensureSchema();
   const owner = normaliseOwner(rawOwner);
@@ -103,7 +135,11 @@ export async function updateEvent(
   } else {
     await db
       .update(events)
-      .set({ time: time.trim(), text: trimmed })
+      .set({
+        time: time.trim(),
+        text: trimmed,
+        category: normaliseCategory(category),
+      })
       .where(and(eq(events.id, id), eq(events.owner, owner)));
   }
   revalidatePath("/");
@@ -127,5 +163,68 @@ export async function clearAllEvents(rawOwner: string): Promise<void> {
   const owner = normaliseOwner(rawOwner);
   if (!owner) return;
   await db.delete(events).where(eq(events.owner, owner));
+  revalidatePath("/");
+}
+
+// ------- profiles -------
+
+export type ProfileDTO = {
+  owner: string;
+  displayName: string;
+  role: "student" | "teacher" | "";
+  school: string;
+  grade: string;
+};
+
+export async function getProfile(rawOwner: string): Promise<ProfileDTO | null> {
+  await ensureSchema();
+  const owner = normaliseOwner(rawOwner);
+  if (!owner) return null;
+  const rows = await db
+    .select()
+    .from(profiles)
+    .where(eq(profiles.owner, owner))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    owner: row.owner,
+    displayName: row.displayName ?? "",
+    role: normaliseRole(row.role ?? ""),
+    school: row.school ?? "",
+    grade: row.grade ?? "",
+  };
+}
+
+export async function saveProfile(
+  rawOwner: string,
+  displayName: string,
+  role: string,
+  school: string,
+  grade: string,
+): Promise<void> {
+  await ensureSchema();
+  const owner = normaliseOwner(rawOwner);
+  if (!owner) return;
+  const values = {
+    owner,
+    displayName: clampText(displayName || owner, 30),
+    role: normaliseRole(role),
+    school: clampText(school, 60),
+    grade: clampText(grade, 20),
+  };
+  // Upsert so repeated saves just update the row.
+  await db
+    .insert(profiles)
+    .values(values)
+    .onConflictDoUpdate({
+      target: profiles.owner,
+      set: {
+        displayName: values.displayName,
+        role: values.role,
+        school: values.school,
+        grade: values.grade,
+      },
+    });
   revalidatePath("/");
 }
