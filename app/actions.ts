@@ -4,6 +4,7 @@ import { db, ensureSchema } from "@/db/client";
 import { events, profiles } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import Anthropic from "@anthropic-ai/sdk";
 
 // Light validation: usernames are 1..30 chars, allow letters, numbers, spaces,
 // underscores, dashes. Trimmed + lowercased so "Oakley" and "oakley" are the
@@ -229,6 +230,96 @@ export async function getProfile(rawOwner: string): Promise<ProfileDTO | null> {
     school: row.school ?? "",
     grade: row.grade ?? "",
   };
+}
+
+// ------- AI helper chat -------
+
+export type HelperMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type HelperReply =
+  | { ok: true; text: string }
+  | { ok: false; error: "no_api_key" | "rate_limit" | "server_error" };
+
+/**
+ * Chat with the planner's AI helper. Takes the student/teacher profile for
+ * context, the prior conversation turns, and the user's new message. Returns
+ * a short, friendly reply.
+ *
+ * ANTHROPIC_API_KEY must be set as a server env var. If it isn't, returns
+ * an ok:false result so the client can show a graceful "chat not set up"
+ * message instead of crashing.
+ */
+export async function askHelper(
+  profileData: {
+    role: "student" | "teacher" | "";
+    school: string;
+    grade: string;
+  },
+  history: HelperMessage[],
+  userMessage: string,
+): Promise<HelperReply> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return { ok: false, error: "no_api_key" };
+
+  const text = userMessage.trim();
+  if (!text) return { ok: false, error: "server_error" };
+
+  // Truncate pathologically long inputs to keep token spend in check — the
+  // helper is for short back-and-forth, not long essays.
+  const trimmedHistory = history.slice(-12).map((m) => ({
+    role: m.role,
+    content: m.content.slice(0, 2000),
+  }));
+  const trimmedUser = text.slice(0, 2000);
+
+  const whoAmI =
+    profileData.role === "teacher"
+      ? `a teacher at ${profileData.school || "a school"}${profileData.grade ? `, ${profileData.grade}` : ""}`
+      : profileData.role === "student"
+        ? `a ${profileData.grade ? `${profileData.grade}-grade ` : ""}student at ${profileData.school || "school"}`
+        : "a student";
+
+  const systemPrompt = [
+    `You are a friendly, warm study buddy for ${whoAmI}.`,
+    "Keep every answer SHORT: 1-4 sentences unless the user explicitly asks for more detail.",
+    "You help with: planning the week, breaking homework into chunks, study tips, test prep, understanding school concepts, and brainstorming project ideas.",
+    "Tone: like a smart friend. Not condescending, not overly cheerful, no 'Great question!'. Match the user's energy.",
+    "If the user asks for help with an assignment, guide them with questions and hints — don't write the whole thing for them. They're learning.",
+    "If asked about non-school topics (gossip, personal advice, romance, etc.), gently redirect to school/planning: 'that's not really my thing — want help planning something?' Keep it friendly.",
+    "Never make up facts about their school or their assignments. If you don't know, say so.",
+  ].join(" ");
+
+  try {
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model: "claude-opus-5-5",
+      max_tokens: 1024,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "low" },
+      system: systemPrompt,
+      messages: [
+        ...trimmedHistory.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user" as const, content: trimmedUser },
+      ],
+    });
+    // Collect text blocks (skip thinking blocks, which may appear as empty).
+    const parts: string[] = [];
+    for (const block of response.content) {
+      if (block.type === "text") parts.push(block.text);
+    }
+    const reply = parts.join("\n").trim();
+    if (!reply) return { ok: false, error: "server_error" };
+    return { ok: true, text: reply };
+  } catch (err: unknown) {
+    if (err instanceof Anthropic.RateLimitError) {
+      return { ok: false, error: "rate_limit" };
+    }
+    console.error("askHelper failed:", err);
+    return { ok: false, error: "server_error" };
+  }
 }
 
 export async function saveProfile(

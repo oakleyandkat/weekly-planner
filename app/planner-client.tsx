@@ -10,7 +10,9 @@ import {
   getProfile,
   saveProfile,
   addBulkEvents,
+  askHelper,
   type ProfileDTO,
+  type HelperMessage,
 } from "./actions";
 
 type PlannerEvent = {
@@ -440,14 +442,17 @@ export default function PlannerClient() {
   const today = startOfDay(new Date());
   const role: Role | "" = profile?.role === "teacher" ? "teacher" : profile?.role === "student" ? "student" : "";
 
-  function openAdd(date: Date) {
+  function openAdd(
+    date: Date,
+    prefill?: { text?: string; category?: string },
+  ) {
     setModal({
       open: true,
       date: ymd(date),
       editingId: null,
       initialTime: "",
-      initialText: "",
-      initialCategory: "",
+      initialText: prefill?.text ?? "",
+      initialCategory: prefill?.category ?? "",
     });
   }
 
@@ -823,6 +828,15 @@ export default function PlannerClient() {
           onSave={handleSave}
         />
       )}
+
+      <HelperWidget
+        profile={profile}
+        events={events}
+        onQuickAdd={(category, dayOffset, text) => {
+          const date = addDays(startOfDay(new Date()), dayOffset);
+          openAdd(date, { category, text });
+        }}
+      />
     </>
   );
 }
@@ -1211,6 +1225,326 @@ function LandingHero({ onStart }: { onStart: () => void }) {
       <button type="button" className="save-btn hero-cta" onClick={onStart}>
         get started →
       </button>
+    </>
+  );
+}
+
+// -------------------- helper widget (floating AI + tips + quick add) --------------------
+
+type HelperTab = "tips" | "quick" | "chat";
+
+// Grade-based study tips. Each entry is 2-4 short bullet strings.
+function tipsFor(role: "student" | "teacher" | "", grade: string): string[] {
+  if (role === "teacher") {
+    return [
+      "break grading into timed batches — 25 mins on, 5 mins off beats one long session.",
+      "keep a 'frequent errors' doc per class. use it to shape the next lesson.",
+      "schedule parent emails in bulk, same day each week.",
+    ];
+  }
+  const key = gradeKey(grade);
+  switch (key) {
+    case "prek":
+    case "k":
+    case "1":
+    case "2":
+    case "3":
+    case "4":
+    case "5":
+      return [
+        "read for 20 min a day — anything you like, books count the most.",
+        "do your homework at the same time every day, same spot.",
+        "pack your backpack the night before. future you says thanks.",
+      ];
+    case "6":
+    case "7":
+    case "8":
+      return [
+        "write every assignment down the SECOND you get it.",
+        "study for a test in short bursts across the week — not one long cram.",
+        "picking high-school classes soon? talk to a teacher about which honors classes fit.",
+      ];
+    case "9":
+      return [
+        "9th-grade GPA counts for college. build good study habits now, not later.",
+        "join one club or team you actually like — not for the resume, for you.",
+        "make a running list of what you've learned in each class. useful later.",
+      ];
+    case "10":
+      return [
+        "SAT/ACT practice is free on Khan Academy. 15 min a day beats weekend cramming.",
+        "start thinking about summer: a job, a program, or a project you own.",
+        "ask teachers for feedback on an essay, not just a grade. they'll give it.",
+      ];
+    case "11":
+      return [
+        "junior year grades matter most for college. protect your sleep.",
+        "visit 1-2 colleges this year if you can — even just online tours.",
+        "start a Common App draft over summer. don't wait until fall.",
+      ];
+    case "12":
+      return [
+        "senior-year apps: track deadlines on your planner, every single one.",
+        "ask for recommendation letters EARLY — teachers write better when they have time.",
+        "FAFSA opens in October. don't skip it.",
+      ];
+    default:
+      return [
+        "write assignments down the day they're given — not later.",
+        "study a bit each day, not all at once.",
+        "sleep > cramming. always.",
+      ];
+  }
+}
+
+// Quick-add presets differ by role. dayOffset is days from today (1 = tomorrow).
+function quickAddPresetsFor(role: "student" | "teacher" | ""): Array<{
+  label: string;
+  emoji: string;
+  category: string;
+  dayOffset: number;
+}> {
+  if (role === "teacher") {
+    return [
+      { label: "lesson plan for tomorrow", emoji: "📋", category: "lesson", dayOffset: 1 },
+      { label: "grading batch (Friday)", emoji: "🖊️", category: "grading", dayOffset: 5 },
+      { label: "meeting tomorrow", emoji: "👥", category: "meeting", dayOffset: 1 },
+      { label: "school event", emoji: "🎉", category: "event", dayOffset: 7 },
+    ];
+  }
+  return [
+    { label: "homework due tomorrow", emoji: "✏️", category: "homework", dayOffset: 1 },
+    { label: "test next week", emoji: "📝", category: "test", dayOffset: 7 },
+    { label: "project in 2 weeks", emoji: "🎯", category: "project", dayOffset: 14 },
+    { label: "school event", emoji: "🎉", category: "event", dayOffset: 7 },
+  ];
+}
+
+function HelperWidget({
+  profile,
+  events,
+  onQuickAdd,
+}: {
+  profile: ProfileDTO;
+  events: PlannerEvent[];
+  onQuickAdd: (category: string, dayOffset: number, text?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<HelperTab>("tips");
+  const role: "student" | "teacher" | "" =
+    profile.role === "student" || profile.role === "teacher"
+      ? profile.role
+      : "";
+  const tips = tipsFor(role, profile.grade);
+  const presets = quickAddPresetsFor(role);
+
+  // Chat state
+  const [chat, setChat] = useState<HelperMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+
+  async function sendChat() {
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
+    const next: HelperMessage[] = [...chat, { role: "user", content: text }];
+    setChat(next);
+    setChatInput("");
+    setChatLoading(true);
+    setChatError(null);
+    try {
+      const reply = await askHelper(
+        { role, school: profile.school, grade: profile.grade },
+        chat, // send prior history, not yet-added user msg
+        text,
+      );
+      if (reply.ok) {
+        setChat([...next, { role: "assistant", content: reply.text }]);
+      } else if (reply.error === "no_api_key") {
+        setChatError(
+          "AI chat isn't set up yet. An adult with Suga access can add ANTHROPIC_API_KEY to turn it on.",
+        );
+      } else if (reply.error === "rate_limit") {
+        setChatError("too many messages — take a breath and try again in a minute.");
+      } else {
+        setChatError("something went wrong talking to Claude. try again?");
+      }
+    } catch {
+      setChatError("couldn't reach Claude. check your internet and try again.");
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  // Count events this week that match "coming up"
+  const today = startOfDay(new Date());
+  const weekAhead = addDays(today, 7);
+  const upcoming = events.filter((e) => {
+    const [y, m, d] = e.eventDate.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt >= today && dt <= weekAhead;
+  });
+
+  return (
+    <>
+      {!open && (
+        <button
+          type="button"
+          className="helper-fab"
+          onClick={() => setOpen(true)}
+          aria-label="Open helper"
+        >
+          <span className="helper-fab-emoji" aria-hidden>
+            🎒
+          </span>
+          <span className="helper-fab-text">help</span>
+        </button>
+      )}
+
+      {open && (
+        <div className="helper-panel" role="dialog" aria-label="Helper">
+          <div className="helper-header">
+            <strong>helper</strong>
+            <button
+              type="button"
+              className="helper-close"
+              onClick={() => setOpen(false)}
+              aria-label="Close helper"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="helper-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "tips"}
+              className={`helper-tab ${tab === "tips" ? "active" : ""}`}
+              onClick={() => setTab("tips")}
+            >
+              💡 tips
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "quick"}
+              className={`helper-tab ${tab === "quick" ? "active" : ""}`}
+              onClick={() => setTab("quick")}
+            >
+              ⚡ quick add
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "chat"}
+              className={`helper-tab ${tab === "chat" ? "active" : ""}`}
+              onClick={() => setTab("chat")}
+            >
+              💬 chat
+            </button>
+          </div>
+
+          <div className="helper-body">
+            {tab === "tips" && (
+              <div className="helper-tips">
+                <div className="helper-tips-title">
+                  {role === "teacher"
+                    ? "teacher tips"
+                    : profile.grade
+                      ? `tips for ${/^\d+$/.test(profile.grade) ? `grade ${profile.grade}` : profile.grade}`
+                      : "study tips"}
+                </div>
+                <ul>
+                  {tips.map((t, i) => (
+                    <li key={i}>{t}</li>
+                  ))}
+                </ul>
+                {upcoming.length > 0 && (
+                  <div className="helper-upcoming">
+                    <b>this week:</b> {upcoming.length} thing
+                    {upcoming.length === 1 ? "" : "s"} coming up
+                    {upcoming.some((e) => e.category === "test") &&
+                      " (includes a test — plan study time)"}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === "quick" && (
+              <div className="helper-quick">
+                <div className="helper-quick-title">one tap, fills the form:</div>
+                {presets.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    className="helper-quick-btn"
+                    onClick={() => {
+                      onQuickAdd(p.category, p.dayOffset);
+                      setOpen(false);
+                    }}
+                  >
+                    <span aria-hidden>{p.emoji}</span> {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {tab === "chat" && (
+              <div className="helper-chat">
+                {chat.length === 0 && !chatError && (
+                  <div className="helper-chat-hint">
+                    ask me anything about school, your week, or how to study
+                    for something. i keep it short.
+                  </div>
+                )}
+                <div className="helper-chat-messages">
+                  {chat.map((m, i) => (
+                    <div
+                      key={i}
+                      className={`helper-msg helper-msg-${m.role}`}
+                    >
+                      {m.content}
+                    </div>
+                  ))}
+                  {chatLoading && (
+                    <div className="helper-msg helper-msg-assistant helper-msg-loading">
+                      thinking…
+                    </div>
+                  )}
+                </div>
+                {chatError && (
+                  <div className="helper-chat-error">{chatError}</div>
+                )}
+                <form
+                  className="helper-chat-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    sendChat();
+                  }}
+                >
+                  <input
+                    type="text"
+                    className="helper-chat-input"
+                    placeholder="ask about school…"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    disabled={chatLoading}
+                    maxLength={500}
+                  />
+                  <button
+                    type="submit"
+                    className="helper-chat-send"
+                    disabled={!chatInput.trim() || chatLoading}
+                  >
+                    send
+                  </button>
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }
