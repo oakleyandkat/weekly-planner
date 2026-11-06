@@ -116,24 +116,44 @@ function categoriesFor(role: Role | ""): readonly {
 }
 
 // Typical US-school class lists by grade. Used to pre-fill a student's week.
-// Normalise grade input first (handles "10", "tenth", "sophomore", etc.).
+// Normalise grade input first (handles "10", "10th", "tenth", "sophomore",
+// "grade 10", "10th grade" etc.).
 function gradeKey(grade: string): string {
   const g = grade.trim().toLowerCase();
+  // Pull out a 1-2 digit number first — matches "6", "6th", "grade 6",
+  // "6th grade", "10", "10th", etc. in one shot. Covers the common cases
+  // before falling back to the word matchers below.
+  const m = g.match(/\b(\d{1,2})(?:st|nd|rd|th)?\b/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (n >= 1 && n <= 12) return String(n);
+  }
   if (/^(pre-?k|pk|prekinder)/.test(g)) return "prek";
   if (/^(k|kinder)/.test(g)) return "k";
-  if (g === "1" || g.includes("first")) return "1";
-  if (g === "2" || g.includes("second")) return "2";
-  if (g === "3" || g.includes("third")) return "3";
-  if (g === "4" || g.includes("fourth")) return "4";
-  if (g === "5" || g.includes("fifth")) return "5";
-  if (g === "6" || g.includes("sixth")) return "6";
-  if (g === "7" || g.includes("seventh")) return "7";
-  if (g === "8" || g.includes("eighth")) return "8";
-  if (g === "9" || g.includes("freshman") || g.includes("ninth")) return "9";
-  if (g === "10" || g.includes("sophomore") || g.includes("tenth")) return "10";
-  if (g === "11" || g.includes("junior") || g.includes("eleventh")) return "11";
-  if (g === "12" || g.includes("senior") || g.includes("twelfth")) return "12";
+  if (g.includes("first")) return "1";
+  if (g.includes("second")) return "2";
+  if (g.includes("third")) return "3";
+  if (g.includes("fourth")) return "4";
+  if (g.includes("fifth")) return "5";
+  if (g.includes("sixth")) return "6";
+  if (g.includes("seventh")) return "7";
+  if (g.includes("eighth")) return "8";
+  if (g.includes("freshman") || g.includes("ninth")) return "9";
+  if (g.includes("sophomore") || g.includes("tenth")) return "10";
+  if (g.includes("junior") || g.includes("eleventh")) return "11";
+  if (g.includes("senior") || g.includes("twelfth")) return "12";
   return "other";
+}
+
+// Pretty-print a grade for display. "6" -> "grade 6", "6th" -> "6th grade",
+// "grade 10" / "10th grade" -> as typed, everything else as typed.
+function prettyGrade(grade: string, role: "student" | "teacher" | ""): string {
+  const g = grade.trim();
+  if (!g) return "";
+  if (role === "teacher") return g; // teachers write "English, Grade 10" etc.
+  if (/^\d{1,2}$/.test(g)) return `grade ${g}`;
+  if (/^\d{1,2}(st|nd|rd|th)$/i.test(g)) return `${g} grade`;
+  return g;
 }
 
 const GRADE_CLASSES: Record<string, string[]> = {
@@ -610,8 +630,10 @@ export default function PlannerClient() {
               )}
               {profile.grade && (
                 <span className="profile-chip">
-                  {profile.role === "teacher" ? "" : "grade "}
-                  {profile.grade}
+                  {prettyGrade(
+                    profile.grade,
+                    profile.role === "teacher" ? "teacher" : "student",
+                  )}
                 </span>
               )}
             </div>
@@ -1096,11 +1118,7 @@ function ClassPrefill({
     }
   }
 
-  const gradeLabel = grade.trim()
-    ? /^\d+$/.test(grade.trim())
-      ? `grade ${grade.trim()}`
-      : grade.trim()
-    : "your grade";
+  const gradeLabel = grade.trim() ? prettyGrade(grade, "student") : "your grade";
 
   return (
     <div className="onboard">
@@ -1459,7 +1477,7 @@ function HelperWidget({
                   {role === "teacher"
                     ? "teacher tips"
                     : profile.grade
-                      ? `tips for ${/^\d+$/.test(profile.grade) ? `grade ${profile.grade}` : profile.grade}`
+                      ? `tips for ${prettyGrade(profile.grade, "student")}`
                       : "study tips"}
                 </div>
                 <ul>
