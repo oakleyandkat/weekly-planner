@@ -1041,7 +1041,11 @@ function ClassPrefill({
     }
   }
 
-  const gradeLabel = grade || "your grade";
+  const gradeLabel = grade.trim()
+    ? /^\d+$/.test(grade.trim())
+      ? `grade ${grade.trim()}`
+      : grade.trim()
+    : "your grade";
 
   return (
     <div className="onboard">
@@ -1049,7 +1053,7 @@ function ClassPrefill({
         <div className="hero-badge">🎉 last step</div>
         <h1 className="onboard-h1">pre-fill your classes?</h1>
         <p className="subtitle">
-          these are the classes most students in <b>{gradeLabel}</b> take.
+          these are the classes most students in <b>{gradeLabel}</b> take.{" "}
           uncheck any you&apos;re not in, or add your own. we&apos;ll add them
           to Mon–Fri this week.
         </p>
